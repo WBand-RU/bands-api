@@ -1,0 +1,25 @@
+{
+    "branches": [
+        "staging",
+        "release"
+    ],
+    "build": {
+        "type": "docker",
+        "docker": {
+            "file": "./Dockerfile",
+            "context": "."
+        }
+    },
+    "deploy": [
+        {
+            "branches": [
+                "staging"
+            ],
+            "type": "docker-swarm",
+            "docker-swarm": {
+                "stack": "wband_staging",
+                "service": "wband_staging_api"
+            }
+        }
+    ]
+}
