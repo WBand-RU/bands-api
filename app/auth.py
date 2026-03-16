@@ -39,12 +39,19 @@ async def _fetch_jwks() -> dict:
     if cached and cached[1] > datetime.utcnow():
         return cached[0]
 
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(jwks_url, timeout=5)
-        resp.raise_for_status()
-        jwks = resp.json()
-        _jwks_cache[jwks_url] = (jwks, datetime.utcnow() + _jwks_ttl)
-        return jwks
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(jwks_url, timeout=5)
+            resp.raise_for_status()
+            jwks = resp.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Identity provider unavailable",
+        ) from exc
+
+    _jwks_cache[jwks_url] = (jwks, datetime.utcnow() + _jwks_ttl)
+    return jwks
 
 
 async def _decode_token(token: str) -> User:
@@ -121,30 +128,38 @@ async def fetch_profile(user_id: str) -> dict[str, str]:
             "client_secret": settings.keycloak_client_secret,
         }
         token_url = f"{settings.keycloak_issuer_url}/protocol/openid-connect/token"
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(token_url, data=data, timeout=5)
-            if resp.status_code != 200:
-                return {}
-            token_body = resp.json()
-            admin_token = token_body.get("access_token")
-            expires_in = token_body.get("expires_in", 300)
-            _admin_token_cache = (admin_token, datetime.utcnow() + timedelta(seconds=expires_in - 30))
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(token_url, data=data, timeout=5)
+                if resp.status_code != 200:
+                    return {}
+                token_body = resp.json()
+        except (httpx.HTTPError, ValueError):
+            return {}
+
+        admin_token = token_body.get("access_token")
+        expires_in = token_body.get("expires_in", 300)
+        _admin_token_cache = (admin_token, datetime.utcnow() + timedelta(seconds=expires_in - 30))
 
     if not admin_token:
         return {}
 
     user_url = f"{issuer_base}/admin/realms/{realm}/users/{user_id}"
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(user_url, headers={"Authorization": f"Bearer {admin_token}"}, timeout=5)
-        if resp.status_code != 200:
-            return {}
-        data = resp.json()
-        profile = {
-            "email": data.get("email"),
-            "name": data.get("firstName") or data.get("username"),
-        }
-        _profile_cache[user_id] = (profile, datetime.utcnow() + _profile_ttl)
-        return profile
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(user_url, headers={"Authorization": f"Bearer {admin_token}"}, timeout=5)
+            if resp.status_code != 200:
+                return {}
+            data = resp.json()
+    except (httpx.HTTPError, ValueError):
+        return {}
+
+    profile = {
+        "email": data.get("email"),
+        "name": data.get("firstName") or data.get("username"),
+    }
+    _profile_cache[user_id] = (profile, datetime.utcnow() + _profile_ttl)
+    return profile
 
 
 async def get_current_user(

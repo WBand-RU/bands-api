@@ -1,8 +1,10 @@
 import uuid
 from datetime import datetime, timedelta
 
+import httpx
 import pytest
 
+from app import auth as auth_module
 from app.models import BandMember, Invite, InviteStatus, Role
 
 
@@ -171,6 +173,29 @@ async def test_create_invite_admin_or_owner(client, token_factory):
 async def test_requires_auth_returns_401(client):
     res = await client.get("/bands")
     assert res.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_identity_provider_timeout_returns_503(client, token_factory, monkeypatch):
+    token = token_factory("jwks-timeout")
+    auth_module._jwks_cache.clear()
+    monkeypatch.setattr(auth_module.settings, "auth_disable_verification", False)
+
+    class _FailingAsyncClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def get(self, *args, **kwargs):
+            raise httpx.ConnectTimeout("timeout")
+
+    monkeypatch.setattr(auth_module.httpx, "AsyncClient", _FailingAsyncClient)
+
+    res = await client.get("/bands", headers=_auth(token))
+    assert res.status_code == 503
+    assert res.json()["detail"] == "Identity provider unavailable"
 
 
 @pytest.mark.asyncio
