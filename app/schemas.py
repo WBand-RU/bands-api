@@ -28,6 +28,8 @@ class MemberOut(BaseModel):
     user_id: str
     role: Role
     created_at: datetime
+    name: Optional[str] = None
+    email: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

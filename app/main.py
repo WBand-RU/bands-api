@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from typing import List
 import uuid
 
@@ -7,11 +8,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import schemas
-from app.auth import User, get_current_user
+from app.auth import User, fetch_profile, get_current_user
+from app.config import get_settings
 from app.database import get_session, init_db
 from app.models import Band, BandMember, Invite, InviteStatus, Role
 
 app = FastAPI(title="Bands Service")
+settings = get_settings()
 
 
 @app.on_event("startup")
@@ -140,12 +143,20 @@ async def list_members(
         .limit(limit)
     )
     members = result.scalars().all()
-    return [
-        schemas.MemberOut(
-            id=m.id, user_id=m.user_id, role=m.role, created_at=m.created_at
+    enriched = []
+    for m in members:
+        profile = await fetch_profile(m.user_id) if not settings.auth_disable_verification else {}
+        enriched.append(
+            schemas.MemberOut(
+                id=m.id,
+                user_id=m.user_id,
+                role=m.role,
+                created_at=m.created_at,
+                name=profile.get("name"),
+                email=profile.get("email"),
+            )
         )
-        for m in members
-    ]
+    return enriched
 
 
 @app.delete("/bands/{band_id}/members/{member_user_id}", response_model=schemas.Message)
@@ -164,7 +175,7 @@ async def remove_member(
     member = result.scalar_one_or_none()
     if not member:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
-    if member.role == Role.owner and membership.role != Role.owner:
+    if member.role == Role.owner:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot remove owner")
 
     await session.delete(member)

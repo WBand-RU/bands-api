@@ -1,6 +1,7 @@
 import base64
 from datetime import datetime, timedelta
 from typing import Annotated, Optional
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import Depends, HTTPException, status
@@ -23,6 +24,9 @@ settings = get_settings()
 
 _jwks_cache: dict[str, tuple[dict, datetime]] = {}
 _jwks_ttl = timedelta(hours=1)
+_profile_cache: dict[str, tuple[dict[str, str], datetime]] = {}
+_profile_ttl = timedelta(minutes=10)
+_admin_token_cache: Optional[tuple[str, datetime]] = None
 
 
 async def _fetch_jwks() -> dict:
@@ -87,6 +91,60 @@ async def _decode_token(token: str) -> User:
         email=payload.get("email"),
         name=payload.get("name") or payload.get("preferred_username"),
     )
+
+
+async def fetch_profile(user_id: str) -> dict[str, str]:
+    cached = _profile_cache.get(user_id)
+    if cached and cached[1] > datetime.utcnow():
+        return cached[0]
+
+    if not settings.keycloak_issuer_url or not settings.keycloak_client_id or not settings.keycloak_client_secret:
+        return {}
+
+    # Extract realm and base URL
+    parsed = urlparse(settings.keycloak_issuer_url)
+    parts = parsed.path.rstrip("/").split("/")
+    realm = parts[-1] if parts else None
+    issuer_base = f"{parsed.scheme}://{parsed.netloc}"
+    if not realm:
+        return {}
+
+    global _admin_token_cache
+    token_cached = _admin_token_cache
+    admin_token: Optional[str] = None
+    if token_cached and token_cached[1] > datetime.utcnow():
+        admin_token = token_cached[0]
+    else:
+        data = {
+            "grant_type": "client_credentials",
+            "client_id": settings.keycloak_client_id,
+            "client_secret": settings.keycloak_client_secret,
+        }
+        token_url = f"{settings.keycloak_issuer_url}/protocol/openid-connect/token"
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(token_url, data=data, timeout=5)
+            if resp.status_code != 200:
+                return {}
+            token_body = resp.json()
+            admin_token = token_body.get("access_token")
+            expires_in = token_body.get("expires_in", 300)
+            _admin_token_cache = (admin_token, datetime.utcnow() + timedelta(seconds=expires_in - 30))
+
+    if not admin_token:
+        return {}
+
+    user_url = f"{issuer_base}/admin/realms/{realm}/users/{user_id}"
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(user_url, headers={"Authorization": f"Bearer {admin_token}"}, timeout=5)
+        if resp.status_code != 200:
+            return {}
+        data = resp.json()
+        profile = {
+            "email": data.get("email"),
+            "name": data.get("firstName") or data.get("username"),
+        }
+        _profile_cache[user_id] = (profile, datetime.utcnow() + _profile_ttl)
+        return profile
 
 
 async def get_current_user(
