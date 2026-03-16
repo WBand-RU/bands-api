@@ -44,7 +44,7 @@ async def _fetch_jwks() -> dict:
             resp = await client.get(jwks_url, timeout=5)
             resp.raise_for_status()
             jwks = resp.json()
-    except (httpx.HTTPError, ValueError) as exc:
+    except (httpx.RequestError, ValueError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Identity provider unavailable",
@@ -134,7 +134,7 @@ async def fetch_profile(user_id: str) -> dict[str, str]:
                 if resp.status_code != 200:
                     return {}
                 token_body = resp.json()
-        except (httpx.HTTPError, ValueError):
+        except (httpx.RequestError, ValueError):
             return {}
 
         admin_token = token_body.get("access_token")
@@ -151,7 +151,7 @@ async def fetch_profile(user_id: str) -> dict[str, str]:
             if resp.status_code != 200:
                 return {}
             data = resp.json()
-    except (httpx.HTTPError, ValueError):
+    except (httpx.RequestError, ValueError):
         return {}
 
     profile = {
