@@ -56,3 +56,12 @@ class RoleUpdate(BaseModel):
 
 class MemberRemove(BaseModel):
     user_id: str
+
+
+class TransferOwnership(BaseModel):
+    new_owner_user_id: str
+
+
+class Pagination(BaseModel):
+    total: int
+    items: list

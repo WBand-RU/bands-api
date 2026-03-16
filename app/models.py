@@ -44,6 +44,8 @@ class InviteStatus(str, enum.Enum):
     pending = "pending"
     accepted = "accepted"
     expired = "expired"
+    declined = "declined"
+    revoked = "revoked"
 
 
 class Invite(Base):
