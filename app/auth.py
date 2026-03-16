@@ -64,7 +64,7 @@ async def _decode_token(token: str) -> User:
                 options={"verify_signature": False, "verify_aud": False},
             )
         except JWTError as exc:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token adv") from exc
     else:
         try:
             unverified_header = jwt.get_unverified_header(token)
