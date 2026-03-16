@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     keycloak_client_id: str = "bands-service"
     keycloak_client_secret: str | None = None
     auth_disable_verification: bool = False
+    cors_origins: list[str] = []
 
     class Config:
         env_file = ".env"
