@@ -34,6 +34,23 @@ async def test_create_and_list_bands(client, token_factory):
 
 
 @pytest.mark.asyncio
+async def test_get_band_by_id_requires_membership(client, token_factory):
+    owner = token_factory("owner-get")
+    outsider = token_factory("outsider-get")
+
+    created = await client.post("/bands", json={"name": "One"}, headers=_auth(owner))
+    band_id = created.json()["id"]
+
+    res = await client.get(f"/bands/{band_id}", headers=_auth(owner))
+    assert res.status_code == 200
+    assert res.json()["id"] == band_id
+    assert res.json()["role"] == Role.owner.value
+
+    res = await client.get(f"/bands/{band_id}", headers=_auth(outsider))
+    assert res.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_rename_band(client, token_factory):
     token = token_factory("user1")
     create = await client.post("/bands", json={"name": "Old"}, headers=_auth(token))

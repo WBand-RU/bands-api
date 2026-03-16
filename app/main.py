@@ -59,6 +59,20 @@ async def list_bands(
     return bands
 
 
+@app.get("/bands/{band_id}", response_model=schemas.BandOut)
+async def get_band(
+    band_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    membership = await _get_membership_or_404(session, band_id, user.sub)
+    result = await session.execute(select(Band).where(Band.id == band_id))
+    band = result.scalar_one_or_none()
+    if not band:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Band not found")
+    return schemas.BandOut(id=band.id, name=band.name, role=membership.role)
+
+
 @app.post("/bands", response_model=schemas.BandOut, status_code=status.HTTP_201_CREATED)
 async def create_band(
     payload: schemas.BandCreate,
