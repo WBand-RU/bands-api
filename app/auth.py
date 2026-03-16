@@ -31,7 +31,8 @@ _admin_token_cache: Optional[tuple[str, datetime]] = None
 
 async def _fetch_jwks() -> dict:
     if settings.keycloak_issuer_url:
-        jwks_url = f"{settings.keycloak_issuer_url}/protocol/openid-connect/certs"
+        base_url = settings.keycloak_internal_url or settings.keycloak_issuer_url
+        jwks_url = f"{base_url}/protocol/openid-connect/certs"
     else:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Issuer not configured")
 
@@ -110,9 +111,11 @@ async def fetch_profile(user_id: str) -> dict[str, str]:
 
     # Extract realm and base URL
     parsed = urlparse(settings.keycloak_issuer_url)
+    network_base = settings.keycloak_internal_url or f"{parsed.scheme}://{parsed.netloc}{parsed.path.rsplit('/', 1)[0]}"
+    netloc_parsed = urlparse(network_base)
     parts = parsed.path.rstrip("/").split("/")
     realm = parts[-1] if parts else None
-    issuer_base = f"{parsed.scheme}://{parsed.netloc}"
+    issuer_base = f"{netloc_parsed.scheme}://{netloc_parsed.netloc}"
     if not realm:
         return {}
 
@@ -127,7 +130,8 @@ async def fetch_profile(user_id: str) -> dict[str, str]:
             "client_id": settings.keycloak_client_id,
             "client_secret": settings.keycloak_client_secret,
         }
-        token_url = f"{settings.keycloak_issuer_url}/protocol/openid-connect/token"
+        token_base = settings.keycloak_internal_url or settings.keycloak_issuer_url
+        token_url = f"{token_base}/protocol/openid-connect/token"
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.post(token_url, data=data, timeout=5)

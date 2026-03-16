@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     app_name: str = "Bands Service"
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/bands"
     keycloak_issuer_url: str = "https://keycloak.example.com/realms/example"
+    keycloak_internal_url: str | None = None
     keycloak_audience: str = "bands-service"
     keycloak_client_id: str = "bands-service"
     keycloak_client_secret: str | None = None
