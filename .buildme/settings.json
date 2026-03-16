@@ -18,7 +18,7 @@
             "type": "docker-swarm",
             "docker-swarm": {
                 "stack": "wband_staging",
-                "service": "wband_staging_api"
+                "service": "wband_staging_bands-api"
             }
         }
     ]
