@@ -354,6 +354,10 @@ async def revoke_invite(
     invite = invite.scalar_one_or_none()
     if not invite:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invite not found")
+    if invite.status == InviteStatus.revoked:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invite already revoked")
+    if invite.status == InviteStatus.accepted:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot revoke accepted invite")
     invite.status = InviteStatus.revoked
     await session.commit()
     return schemas.Message(message="Invite revoked")
@@ -373,8 +377,10 @@ async def resend_invite(
     invite = invite.scalar_one_or_none()
     if not invite:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invite not found")
-    if invite.status not in {InviteStatus.pending, InviteStatus.revoked, InviteStatus.expired, InviteStatus.declined}:
+    if invite.status == InviteStatus.accepted:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot resend accepted invite")
+    if invite.status == InviteStatus.pending:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invite already active")
     # regenerate token and extend expiration
     invite.token = uuid.uuid4().hex
     invite.status = InviteStatus.pending

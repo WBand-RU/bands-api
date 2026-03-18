@@ -36,7 +36,8 @@ def event_loop() -> asyncio.AbstractEventLoop:  # pytest-asyncio uses this
 @pytest_asyncio.fixture()
 async def session():
     worker = os.environ.get("PYTEST_XDIST_WORKER", "default")
-    db_url = f"sqlite+aiosqlite:///./test_{worker}_{uuid.uuid4().hex}.db"
+    db_path = f"./test_{worker}_{uuid.uuid4().hex}.db"
+    db_url = f"sqlite+aiosqlite:///{db_path}"
     local_engine = create_async_engine(db_url)
 
     async with local_engine.begin() as conn:
@@ -47,6 +48,10 @@ async def session():
         yield db
 
     await local_engine.dispose()
+    try:
+        os.remove(db_path)
+    except FileNotFoundError:
+        pass
 
 
 @pytest_asyncio.fixture()

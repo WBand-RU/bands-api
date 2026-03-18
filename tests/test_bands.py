@@ -515,6 +515,58 @@ async def test_resend_invite_success_and_accepted_error(client, token_factory):
 
 
 @pytest.mark.asyncio
+async def test_revoke_invite_cannot_revoke_twice_or_accepted(client, token_factory):
+    owner = token_factory("owner-revoke-twice")
+    invitee = token_factory("invitee-revoke-twice")
+    create = await client.post("/bands", json={"name": "RevokeTwice"}, headers=_auth(owner))
+    band_id = create.json()["id"]
+
+    invite = await client.post(
+        f"/bands/{band_id}/invites",
+        json={"email": "user@example.com"},
+        headers=_auth(owner),
+    )
+    invite_id = invite.json()["id"]
+
+    first = await client.post(f"/bands/{band_id}/invites/{invite_id}/revoke", headers=_auth(owner))
+    assert first.status_code == 200
+
+    second = await client.post(f"/bands/{band_id}/invites/{invite_id}/revoke", headers=_auth(owner))
+    assert second.status_code == 400
+
+    # simulate accepted invite and ensure revoke forbidden
+    invite = await client.post(
+        f"/bands/{band_id}/invites",
+        json={"email": "accept@example.com"},
+        headers=_auth(owner),
+    )
+    accept_id = invite.json()["id"]
+    token = invite.json()["token"]
+    accepted = await client.post(f"/invites/{token}/accept", headers=_auth(invitee))
+    assert accepted.status_code == 200
+
+    res = await client.post(f"/bands/{band_id}/invites/{accept_id}/revoke", headers=_auth(owner))
+    assert res.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_resend_invite_forbidden_for_pending(client, token_factory):
+    owner = token_factory("owner-resend-pending")
+    create = await client.post("/bands", json={"name": "ResendPending"}, headers=_auth(owner))
+    band_id = create.json()["id"]
+
+    invite = await client.post(
+        f"/bands/{band_id}/invites",
+        json={"email": "pending@example.com"},
+        headers=_auth(owner),
+    )
+    invite_id = invite.json()["id"]
+
+    res = await client.post(f"/bands/{band_id}/invites/{invite_id}/resend", headers=_auth(owner))
+    assert res.status_code == 400
+
+
+@pytest.mark.asyncio
 async def test_transfer_ownership_success_and_errors(client, session, token_factory):
     owner = token_factory("owner-transfer")
     member = token_factory("member-transfer")
