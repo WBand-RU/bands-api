@@ -237,6 +237,64 @@ async def update_member_role(
     return schemas.MemberOut(id=member.id, user_id=member.user_id, role=member.role, created_at=member.created_at)
 
 
+@app.get("/me/invites", response_model=List[schemas.MyInviteOut])
+async def list_my_invites(
+    status_filter: InviteStatus | None = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    if not user.email:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email not available in token")
+
+    stmt = (
+        select(Invite, Band.name)
+        .join(Band, Invite.band_id == Band.id)
+        .where(Invite.email == user.email)
+        .order_by(Invite.created_at.desc())
+    )
+    if status_filter:
+        stmt = stmt.where(Invite.status == status_filter)
+    stmt = stmt.offset(offset).limit(limit)
+    result = await session.execute(stmt)
+    invites = []
+    for invite, band_name in result.all():
+        if invite.is_expired:
+            invite.mark_expired()
+        invites.append(
+            schemas.MyInviteOut(
+                id=invite.id,
+                band_id=invite.band_id,
+                band_name=band_name,
+                email=invite.email,
+                status=invite.status,
+                token=invite.token,
+                expires_at=invite.expires_at,
+            )
+        )
+    if any(i.status == InviteStatus.expired for i in invites):
+        await session.commit()
+    return invites
+
+
+@app.post("/bands/{band_id}/leave", response_model=schemas.Message)
+async def leave_band(
+    band_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    membership = await _get_membership_or_404(session, band_id, user.sub)
+    if membership.role == Role.owner:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Owner cannot leave; transfer ownership first",
+        )
+    await session.delete(membership)
+    await session.commit()
+    return schemas.Message(message="You have left the band")
+
+
 @app.post("/bands/{band_id}/invites", response_model=schemas.InviteOut, status_code=status.HTTP_201_CREATED)
 async def create_invite(
     band_id: uuid.UUID,

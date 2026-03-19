@@ -604,3 +604,121 @@ async def test_transfer_ownership_success_and_errors(client, session, token_fact
         headers=_auth(owner),
     )
     assert res.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_list_my_invites_success(client, token_factory):
+    owner = token_factory("owner-my-inv")
+    # email derived from sub: "invitee-my-inv@example.com"
+    invitee = token_factory("invitee-my-inv")
+
+    # Create two bands and invite the same email
+    create1 = await client.post("/bands", json={"name": "MyInvBand1"}, headers=_auth(owner))
+    band1_id = create1.json()["id"]
+    create2 = await client.post("/bands", json={"name": "MyInvBand2"}, headers=_auth(owner))
+    band2_id = create2.json()["id"]
+
+    await client.post(
+        f"/bands/{band1_id}/invites",
+        json={"email": "invitee-my-inv@example.com"},
+        headers=_auth(owner),
+    )
+    await client.post(
+        f"/bands/{band2_id}/invites",
+        json={"email": "invitee-my-inv@example.com"},
+        headers=_auth(owner),
+    )
+
+    res = await client.get("/me/invites", headers=_auth(invitee))
+    assert res.status_code == 200
+    data = res.json()
+    assert len(data) == 2
+    band_names = {item["band_name"] for item in data}
+    assert band_names == {"MyInvBand1", "MyInvBand2"}
+    assert all(item["email"] == "invitee-my-inv@example.com" for item in data)
+
+
+@pytest.mark.asyncio
+async def test_list_my_invites_with_status_filter(client, token_factory):
+    owner = token_factory("owner-my-inv-filter")
+    invitee = token_factory("invitee-my-inv-filter")
+
+    create = await client.post("/bands", json={"name": "MyInvFilter"}, headers=_auth(owner))
+    band_id = create.json()["id"]
+
+    inv = await client.post(
+        f"/bands/{band_id}/invites",
+        json={"email": "invitee-my-inv-filter@example.com"},
+        headers=_auth(owner),
+    )
+    token = inv.json()["token"]
+
+    # Accept the invite
+    await client.post(f"/invites/{token}/accept", headers=_auth(invitee))
+
+    # Filter by pending — should be empty
+    res = await client.get(
+        f"/me/invites?status_filter={InviteStatus.pending.value}",
+        headers=_auth(invitee),
+    )
+    assert res.status_code == 200
+    assert len(res.json()) == 0
+
+    # Filter by accepted — should have 1
+    res = await client.get(
+        f"/me/invites?status_filter={InviteStatus.accepted.value}",
+        headers=_auth(invitee),
+    )
+    assert res.status_code == 200
+    assert len(res.json()) == 1
+
+
+@pytest.mark.asyncio
+async def test_list_my_invites_empty_when_no_invites(client, token_factory):
+    user = token_factory("lonely-user")
+    res = await client.get("/me/invites", headers=_auth(user))
+    assert res.status_code == 200
+    assert res.json() == []
+
+
+@pytest.mark.asyncio
+async def test_leave_band_success(client, session, token_factory):
+    owner = token_factory("owner-leave")
+    member = token_factory("member-leave")
+
+    create = await client.post("/bands", json={"name": "LeaveBand"}, headers=_auth(owner))
+    band_id = create.json()["id"]
+
+    session.add(BandMember(band_id=uuid.UUID(band_id), user_id="member-leave", role=Role.member))
+    await session.commit()
+
+    res = await client.post(f"/bands/{band_id}/leave", headers=_auth(member))
+    assert res.status_code == 200
+    assert res.json()["message"] == "You have left the band"
+
+    # Verify member is no longer listed
+    res = await client.get(f"/bands/{band_id}/members", headers=_auth(owner))
+    user_ids = {m["user_id"] for m in res.json()}
+    assert "member-leave" not in user_ids
+
+
+@pytest.mark.asyncio
+async def test_leave_band_owner_forbidden(client, token_factory):
+    owner = token_factory("owner-leave-fail")
+    create = await client.post("/bands", json={"name": "OwnerCantLeave"}, headers=_auth(owner))
+    band_id = create.json()["id"]
+
+    res = await client.post(f"/bands/{band_id}/leave", headers=_auth(owner))
+    assert res.status_code == 403
+    assert "transfer ownership" in res.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_leave_band_not_member_returns_404(client, token_factory):
+    owner = token_factory("owner-leave-404")
+    outsider = token_factory("outsider-leave-404")
+    create = await client.post("/bands", json={"name": "Leave404"}, headers=_auth(owner))
+    band_id = create.json()["id"]
+
+    res = await client.post(f"/bands/{band_id}/leave", headers=_auth(outsider))
+    assert res.status_code == 404

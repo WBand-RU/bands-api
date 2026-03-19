@@ -48,6 +48,18 @@ class InviteOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class MyInviteOut(BaseModel):
+    id: uuid.UUID
+    band_id: uuid.UUID
+    band_name: str
+    email: EmailStr
+    status: InviteStatus
+    token: str
+    expires_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class Message(BaseModel):
     message: str
 
