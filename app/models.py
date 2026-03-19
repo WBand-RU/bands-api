@@ -1,6 +1,6 @@
 import enum
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import DateTime, Enum, ForeignKey, String, UniqueConstraint, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -59,14 +59,18 @@ class Invite(Base):
     email: Mapped[str] = mapped_column(String(255), nullable=False)
     token: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, default=lambda: uuid.uuid4().hex)
     status: Mapped[InviteStatus] = mapped_column(Enum(InviteStatus), default=InviteStatus.pending, nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.utcnow() + timedelta(days=7))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc) + timedelta(days=7))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     band: Mapped[Band] = relationship(back_populates="invites")
 
     @property
     def is_expired(self) -> bool:
-        return datetime.utcnow() >= self.expires_at
+        now = datetime.now(timezone.utc)
+        exp = self.expires_at
+        if exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        return now >= exp
 
     def mark_expired(self) -> None:
         if self.status == InviteStatus.pending and self.is_expired:

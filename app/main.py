@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List
 import uuid
 
@@ -442,7 +442,7 @@ async def resend_invite(
     # regenerate token and extend expiration
     invite.token = uuid.uuid4().hex
     invite.status = InviteStatus.pending
-    invite.expires_at = datetime.utcnow() + timedelta(days=7)
+    invite.expires_at = datetime.now(timezone.utc) + timedelta(days=7)
     await session.commit()
     await session.refresh(invite)
     return invite
