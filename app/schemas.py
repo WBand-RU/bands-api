@@ -7,6 +7,15 @@ from pydantic import BaseModel, ConfigDict, EmailStr
 from app.models import InviteStatus, Role
 
 
+class User(BaseModel):
+    """User profile schema for /me endpoint"""
+    sub: str
+    email: Optional[str] = None
+    name: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class BandCreate(BaseModel):
     name: str
 
@@ -74,6 +83,11 @@ class MemberRemove(BaseModel):
 
 class TransferOwnership(BaseModel):
     new_owner_user_id: str
+
+
+class BandCheckName(BaseModel):
+    name: str
+    available: bool
 
 
 class Pagination(BaseModel):

@@ -722,3 +722,139 @@ async def test_leave_band_not_member_returns_404(client, token_factory):
 
     res = await client.post(f"/bands/{band_id}/leave", headers=_auth(outsider))
     assert res.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_me_success(client, token_factory):
+    """Test GET /me endpoint returns user profile"""
+    token = token_factory("me-user")
+    res = await client.get("/me", headers=_auth(token))
+    assert res.status_code == 200
+    data = res.json()
+    assert data["sub"] == "me-user"
+    assert data["email"] == "me-user@example.com"
+
+
+@pytest.mark.asyncio
+async def test_get_me_requires_auth(client):
+    """Test GET /me requires authentication"""
+    res = await client.get("/me")
+    assert res.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_check_band_name_available(client, token_factory):
+    """Test GET /bands/check-name for available name"""
+    token = token_factory("check-name-user")
+    res = await client.get("/bands/check-name?name=UniqueBandName", headers=_auth(token))
+    assert res.status_code == 200
+    data = res.json()
+    assert data["name"] == "UniqueBandName"
+    assert data["available"] is True
+
+
+@pytest.mark.asyncio
+async def test_check_band_name_taken(client, token_factory):
+    """Test GET /bands/check-name for taken name"""
+    token = token_factory("check-name-owner")
+    create = await client.post("/bands", json={"name": "TakenBand"}, headers=_auth(token))
+    assert create.status_code == 201
+
+    res = await client.get("/bands/check-name?name=TakenBand", headers=_auth(token))
+    assert res.status_code == 200
+    data = res.json()
+    assert data["name"] == "TakenBand"
+    assert data["available"] is False
+
+
+@pytest.mark.asyncio
+async def test_check_band_name_requires_auth(client):
+    """Test GET /bands/check-name requires authentication"""
+    res = await client.get("/bands/check-name?name=TestBand")
+    assert res.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_resend_invite_declined_status(client, token_factory):
+    """Test resend_invite works for declined invites"""
+    owner = token_factory("owner-resend-declined")
+    invitee = token_factory("invitee-resend-declined")
+    
+    create = await client.post("/bands", json={"name": "ResendDeclinedBand"}, headers=_auth(owner))
+    band_id = create.json()["id"]
+    
+    invite = await client.post(
+        f"/bands/{band_id}/invites",
+        json={"email": "declined@example.com"},
+        headers=_auth(owner),
+    )
+    invite_id = invite.json()["id"]
+    original_token = invite.json()["token"]
+    
+    # Decline the invite
+    decline = await client.post(f"/invites/{original_token}/decline", headers=_auth(invitee))
+    assert decline.status_code == 200
+    
+    # Resend should work for declined invite
+    resent = await client.post(f"/bands/{band_id}/invites/{invite_id}/resend", headers=_auth(owner))
+    assert resent.status_code == 200
+    assert resent.json()["token"] != original_token
+    assert resent.json()["status"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_resend_invite_revoked_status(client, token_factory):
+    """Test resend_invite works for revoked invites"""
+    owner = token_factory("owner-resend-revoked")
+    
+    create = await client.post("/bands", json={"name": "ResendRevokedBand"}, headers=_auth(owner))
+    band_id = create.json()["id"]
+    
+    invite = await client.post(
+        f"/bands/{band_id}/invites",
+        json={"email": "revoked@example.com"},
+        headers=_auth(owner),
+    )
+    invite_id = invite.json()["id"]
+    original_token = invite.json()["token"]
+    
+    # Revoke the invite
+    revoke = await client.post(f"/bands/{band_id}/invites/{invite_id}/revoke", headers=_auth(owner))
+    assert revoke.status_code == 200
+    
+    # Resend should work for revoked invite
+    resent = await client.post(f"/bands/{band_id}/invites/{invite_id}/resend", headers=_auth(owner))
+    assert resent.status_code == 200
+    assert resent.json()["token"] != original_token
+    assert resent.json()["status"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_resend_invite_expired_status(client, session, token_factory):
+    """Test resend_invite works for expired invites"""
+    from datetime import datetime, timedelta, timezone
+    from app.models import Invite, InviteStatus
+    
+    owner = token_factory("owner-resend-expired")
+    
+    create = await client.post("/bands", json={"name": "ResendExpiredBand"}, headers=_auth(owner))
+    band_id = create.json()["id"]
+    
+    # Create an expired invite directly with expired status
+    original_token = uuid.uuid4().hex
+    expired_invite = Invite(
+        band_id=uuid.UUID(band_id),
+        email="expired@example.com",
+        expires_at=datetime.now(timezone.utc) - timedelta(days=1),
+        status=InviteStatus.expired,
+        token=original_token,
+    )
+    session.add(expired_invite)
+    await session.commit()
+    await session.refresh(expired_invite)
+    
+    # Resend should work for expired invite
+    resent = await client.post(f"/bands/{band_id}/invites/{expired_invite.id}/resend", headers=_auth(owner))
+    assert resent.status_code == 200
+    assert resent.json()["token"] != original_token
+    assert resent.json()["status"] == "pending"
