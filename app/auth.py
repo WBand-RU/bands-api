@@ -8,7 +8,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwk, jwt
 from jose.utils import base64url_decode
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.config import get_settings
 
@@ -17,6 +17,8 @@ class User(BaseModel):
     sub: str
     email: Optional[str] = None
     name: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 bearer_scheme = HTTPBearer(auto_error=False)
