@@ -24,7 +24,7 @@ jobs:
         run: echo "$DOCKER_PASS" | docker login $DOCKER_URL -u "$DOCKER_USER" --password-stdin
 
       - name: Build the Docker image
-        run: docker build --file ./Dockerfile --tag $IMAGE_TAG ./web
+        run: docker build --file ./Dockerfile --tag $IMAGE_TAG .
 
       - name: Tag the Docker image
         run: docker tag $IMAGE_TAG $IMAGE_RUN_NUMBER_TAG
