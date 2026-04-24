@@ -1,0 +1,45 @@
+name: Docker Image CI
+
+on:
+  push:
+    branches: ["staging", "release", "develop"]
+  pull_request:
+    branches: ["staging", "release", "develop"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    env:
+      DOCKER_URL: ${{ secrets.DOCKER_REGISTRY }}
+      DOCKER_USER: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_PASS: ${{ secrets.DOCKER_PASSWORD }}
+      IMAGE_TAG: ${{ secrets.DOCKER_REGISTRY }}/wband/bands:${{ github.ref_name }}
+      IMAGE_RUN_NUMBER_TAG: ${{ secrets.DOCKER_REGISTRY }}/wband/bands:${{github.run_number}}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login into Docker
+        run: echo "$DOCKER_PASS" | docker login $DOCKER_URL -u "$DOCKER_USER" --password-stdin
+
+      - name: Build the Docker image
+        run: docker build --file ./Dockerfile --tag $IMAGE_TAG ./web
+
+      - name: Tag the Docker image
+        run: docker tag $IMAGE_TAG $IMAGE_RUN_NUMBER_TAG
+
+      - name: Push the Docker image
+        run: docker push $IMAGE_TAG
+      - name: Push the Docker image with run number
+        run: docker push $IMAGE_RUN_NUMBER_TAG
+
+  # deploy:
+  #   runs-on: deployer
+
+  #   needs:
+  #     - build
+
+  #   steps:
+  #     - name: Update docker swarm service
+  #       run: docker service update --detach wband_${{ github.ref_name }}_bands
